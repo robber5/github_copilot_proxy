@@ -210,27 +210,28 @@ async def proxy_handler(request):
     else:
         request_kwargs["data"] = body  # 默认处理为原始数据
 
-
     async with ClientSession() as session:
         async with session.request(**request_kwargs) as response:
             # 检查是否需要流式传输
-            if request.query.get("stream") == "true":
+            if request_kwargs["json"]['stream']:
                 async def stream_response():
                     async for chunk in response.content.iter_chunked(1024):
                         yield chunk
 
-                return web.StreamResponse(
+                stream_resp = web.StreamResponse(
                     status=response.status,
                     headers=response.headers,
-                ).prepare(request).write(stream_response())
+                )
+                await stream_resp.prepare(request)  # Await the prepare coroutine
+                async for chunk in stream_response():
+                    await stream_resp.write(chunk)  # Write chunks to the response
+                return stream_resp
+            
+            # 处理非流式响应
+            response_json = await response.json()
+            print(response_json)
+            return web.json_response(response_json, status=response.status)
 
-            # 非流式响应
-            response_body = await response.read()
-            return web.Response(
-                status=response.status,
-                headers=response.headers,
-                body=response_body,
-            )
 
 # 创建 aiohttp 应用
 app = web.Application()
